@@ -86,6 +86,7 @@ public class ProductRepositoryAdapter implements ProductRepositoryPort {
     @Override
     public Product save(ProductRequest productRequest) {
         ProductEntity productEntity = productEntityMapper.mapProductRequestToProductEntity(productRequest);
+        productEntity.setUuid(UUID.randomUUID());
         ProductEntity savedEntity = productRepository.save(productEntity);
         return productEntityMapper.toProduct(savedEntity);
     }

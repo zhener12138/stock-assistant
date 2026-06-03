@@ -9,7 +9,7 @@ spring:
 
 stock:
   api:
-    base-url: http://localhost:8080/api/v1
+    base-url: http://localhost:8080
 
 server:
   port: 8060

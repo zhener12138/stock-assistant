@@ -81,6 +81,7 @@ public class WarehouseRepositoryAdapter implements WarehouseRepositoryPort {
     @Override
     public Warehouse save(WarehouseRequest warehouseRequest) {
         WarehouseEntity entity = warehouseEntityMapper.toWarehouseEntity(warehouseRequest);
+        entity.setUuid(UUID.randomUUID());
         return warehouseEntityMapper.toWarehouse(warehouseRepository.save(entity));
     }
 
