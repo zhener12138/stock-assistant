@@ -9,11 +9,15 @@ import com.stockassistant.server.persistence.mapper.InventoryEntityMapper;
 import com.stockassistant.server.persistence.repository.InventoryRepository;
 import com.stockassistant.server.persistence.specification.InventorySpecification;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -47,16 +51,30 @@ public class InventoryRepositoryAdapter implements InventoryRepositoryPort {
     }
 
     @Override
+    @Transactional
     public InventoryItem update(UUID warehouseId, UUID productId, int quantity) {
-        int updated = inventoryRepository.updateQuantity(warehouseId, productId, quantity);
-        if (updated == 0) {
-            throw new OperationFailedException();
-        }
         InventoryItemEntity entity = inventoryRepository
                 .findByWarehouseAndProduct(warehouseId, productId)
                 .orElseThrow(ObjectNotFoundException::new);
 
-        return inventoryEntityMapper.toInventoryItem(entity);
+        entity.setQuantity(quantity);
+        entity.setLastStockUpdate(LocalDateTime.now());
+
+        try {
+            InventoryItemEntity saved = inventoryRepository.save(entity);
+            return inventoryEntityMapper.toInventoryItem(saved);
+        } catch (OptimisticLockingFailureException e) {
+            throw new OperationFailedException(
+                    "库存更新失败，该记录已被其他操作修改，请重试");
+        }
+    }
+
+    @Override
+    public List<InventoryItem> findAllBelowThreshold(int threshold) {
+        return inventoryRepository.findItemsBelowThreshold(threshold)
+                .stream()
+                .map(inventoryEntityMapper::toInventoryItem)
+                .toList();
     }
 
 }

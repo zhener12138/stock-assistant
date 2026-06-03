@@ -46,6 +46,10 @@ public class InventoryItemEntity {
     @Column(name = "last_stock_update", nullable = false)
     private LocalDateTime lastStockUpdate;
 
+    /** Optimistic lock version field for concurrency control */
+    @Version
+    private Long version;
+
     /** The product associated with this inventory item */
     @ManyToOne(fetch = FetchType.LAZY)
     private ProductEntity product;

@@ -1,246 +1,121 @@
-# Stock Assistant POC
+# Stock Assistant 智能库存助手
 
-A **POC** showing how to bring **Spring AI** into a traditional Spring Boot application, using an **API-first** design and a **clean, hexagonal architecture**.
+基于 Spring AI + Ollama 的智能库存管理系统，支持通过自然语言进行库存查询与管理操作。
 
-The idea is to explore how conversational interfaces can simplify existing workflows like managing stock without changing the core of a working system.
-
----
-
-## 1. Overview & Rationale
-
-This project started as a regular Spring Boot inventory system. Then we asked: *what if you could use natural language to interact with it no dropdowns, no complex UI, just plain English?*
-
-We added **Spring AI v1.0.0-M6** to the mix and exposed the business logic through **OpenAPI-generated clients**. That made it simple to wrap existing operations as `@Tool`s for the AI to call.
-
-The goal isn’t to reinvent the app it’s to test how AI fits in. And it turns out, even small things like replacing a search form with a prompt (e.g. *"Find all products in ELECTRONICS under 30 euros"*) make the whole experience feel lighter.
-
-By keeping the architecture clean and modular, we can evolve this pattern further or reuse it elsewhere.
+> **项目来源：** 本项目 fork 自 [saberdaagi/stock-assistant](https://github.com/saberdaagi/stock-assistant)，在原项目基础上进行了多项功能改进和优化。
 
 ---
 
-## 2. Project Structure
+## 我的改造内容
+
+以下是我在原项目基础上新增的改进：
+
+### 已完成的改造
+
+| 改造项 | 说明 |
+|--------|------|
+| **System Prompt 约束** | 为 ChatClient 添加了系统提示词，限制 LLM 仅回答库存管理相关问题，拒绝无关查询 |
+| **乐观锁并发控制** | 在 InventoryItemEntity 中添加 `@Version` 字段，库存更新时自动检测并发冲突并抛出 `OptimisticLockingFailureException` |
+| **库存预警功能** | 新增 `InventoryAlertService`，支持检测低于阈值的库存项并输出告警日志 |
+| **缺失的依赖修复** | 补全了 `spring-boot-starter-data-redis` 和 `h2` 依赖，确保项目编译通过 |
+| **缺失的 port/out 接口** | 补全了 `InventoryRepositoryPort`、`ProductRepositoryPort`、`WarehouseRepositoryPort` 接口定义 |
+| **配置文件示例** | 添加了 `application-example.yml` 作为配置参考模板 |
+
+---
+
+## 项目架构
 
 ```
 stock-assistant/
-├── pom.xml             # Parent Maven POM and project descriptor
-├── stock-spec/         # OpenAPI spec (openapi.yaml) used to generate server and client code
-├── stock-server/       # Hexagonal-architecture Spring Boot app (server stub, customized logic)
-└── stock-ai-client/    # AI client module (generated client, tool wrappers, ChatController)
+├── pom.xml                          # 父 POM
+├── docker-compose.yml               # Docker 编排文件
+├── Dockerfile                       # 多阶段构建
+├── stock-spec/                      # OpenAPI 规范定义
+│   └── v1/stock-api-v1.yaml
+├── stock-server/                    # 后端服务（六边形架构）
+│   ├── stock-server-api/            # API 层（Controller + 接口生成）
+│   ├── stock-server-domain/         # 领域层（业务逻辑 + 领域模型）
+│   ├── stock-server-persistence/    # 持久层（JPA + Redis 缓存）
+│   └── stock-server-starter/        # 启动模块
+└── stock-ai-client/                 # AI 对话客户端
+    ├── src/main/java/.../tools/     # @Tool 注解工具类
+    └── src/main/java/.../config/    # ChatClient 配置
 ```
 
-* **stock-spec/**: Defines REST endpoints, schemas, and parameters the source of truth.
-* **stock-server/**: Implements business logic, adapters, and domain entities using hexagonal architecture.
-* **stock-ai-client/**: Contains generated client code, `@Tool` wrappers, and the AI chat interface.
+### 架构特点
+
+- **六边形架构（端口适配器模式）**：domain 层完全独立，不依赖任何外部框架
+- **API 契约先行**：OpenAPI 3.0 规范定义接口，通过 openapi-generator 自动生成服务端桩代码和客户端 SDK
+- **AI 能力集成**：Spring AI + Ollama 本地大模型，通过 `@Tool` 注解将 Java 方法暴露为 LLM 可调用工具
 
 ---
 
-## 3. AI Chat Endpoint
+## 技术栈
 
-Users interact with the backend using plain-language prompts sent to the chat endpoint:
-
-```http
-POST /api/chat/process
-Content-Type: application/json
-
-{ "prompt": "Add a new product called \"Wireless Mouse\" with SKU \"MOU-987\", category \"ELECTRONICS\", unit \"UNIT\", price 29.99." }
-```
-
-### 💬 Example Prompts
-
-#### ➕ Add Product
-
-*Prompt:*
-
-```text
-Add a product named "Wireless Mouse" with SKU "MOU-987", category ELECTRONICS, unit UNIT, price 29.99.
-```
-
-*Generated API Call:*
-
-```http
-POST /api/v1/products
-Content-Type: application/json
-{
-  "sku": "MOU-987",
-  "name": "Wireless Mouse",
-  "category": "ELECTRONICS",
-  "unitOfMeasure": "UNIT",
-  "price": 29.99
-}
-```
-
-#### 🔍 Search Product
-
-*Prompt:*
-
-```text
-Find product with name "Wireless Mouse".
-```
-
-*Generated API Call:*
-
-```http
-GET /api/v1/products?name=Wireless%20Mouse
-```
-
-#### 📝 Update Product
-
-*Prompt:*
-
-```text
-Update the price of the product with UUID '550e8400-e29b-41d4-a716-446655440000' to 34.99.
-```
-
-*Generated API Call (example):*
-
-```http
-PUT /api/v1/products/{uuid}
-Content-Type: application/json
-{
-  "price": 34.99
-}
-```
-
-#### ❌ Delete Product
-
-*Prompt:*
-
-```text
-Delete the product with UUID "550e8400-e29b-41d4-a716-446655440000".
-```
-
-*Generated API Call:*
-
-```http
-DELETE /api/v1/products/{uuid}
-```
+| 模块 | 技术 |
+|------|------|
+| 语言 | Java 21 |
+| 框架 | Spring Boot 3.4, Spring AI 1.0.0-M7 |
+| 数据库 | PostgreSQL 15（生产）、H2（本地开发） |
+| 缓存 | H2（本地开发）、PostgreSQL（生产） |
+| AI 推理 | Ollama (llama3.2) |
+| 代码生成 | OpenAPI Generator + MapStruct |
+| 部署 | Docker Compose |
 
 ---
 
-## 4. OpenAPI Client & Tools Generation
+## 快速启动
 
-1. **Generate** client interfaces using the OpenAPI Generator Maven plugin.
-2. **Configure** clients as Spring Beans:
-
-```java
-@Configuration
-public class ApiClientConfig {
-    @Value("${stock.api.base-url}")
-    private String baseUrl;
-
-    @Bean
-    public RestTemplate restTemplate() { return new RestTemplate(); }
-
-    @Bean
-    public ApiClient apiClient(RestTemplate rt) {
-        return new ApiClient(rt).setBasePath(baseUrl);
-    }
-
-    @Bean public ProductsApi productsApi(ApiClient c) { return new ProductsApi(c); }
-    // ... InventoryApi, WarehousesApi
-}
-```
-
-3. **Wrap** API calls using `@Tool`:
-
-```java
-@Component
-@RequiredArgsConstructor
-public class ProductTools {
-    private final ProductsApi productsApi;
-
-    @Tool(name = "create_product", description = "Create a new product")
-    public Product createProduct(/*...*/) {
-        ProductRequest req = new ProductRequest()
-            .name(name).sku(sku).price(price)
-            .category(category).unitOfMeasure(unit);
-        return productsApi.createProduct(req);
-    }
-}
-```
-
----
-
-## 5. AI Tool Registration
-
-Register `@Tool` beans with Spring AI’s `ChatClient`:
-
-```java
-@Configuration
-public class AiConfig {
-    @Bean
-    public ChatClient chatClient(ChatClient.Builder builder, ProductTools pt, InventoryTools it, WarehousesTools wt) {
-        return builder.defaultTools(pt, it, wt).build();
-    }
-}
-```
-
----
-
-## 6. Unit Testing
-
-```java
-@SpringBootTest
-@ActiveProfiles("test")
-class ProductChatControllerTest {
-    @Autowired
-    private ChatClient chatClient;
-
-    @Test
-    void getProductDetails_ValidName_ReturnsDetails() {
-        // WireMock stub and test setup
-    }
-}
-```
-
----
-
-## 7. Running the Project
-
-### ✅ Option A: Docker Compose
-
-Use `docker-compose.yml` to start all services and populate **initial test data** automatically:
+### 方式一：Docker Compose（推荐）
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-Services:
+启动后包含以下服务：
+- PostgreSQL 数据库（端口 5432）
+- Ollama + llama3.2 模型（端口 11434）
+- Stock Server（端口 8080）
+- AI Client（端口 8060）
 
-* `postgres` (DB)
-* `ollama` (AI)
-* `stock-server` (Spring Boot app)
-* `stock-ai-client` (AI client)
+### 方式二：本地开发
 
-Endpoint:
+1. 构建项目：
+   ```bash
+   mvn clean install -DskipTests
+   ```
+2. 启动 Stock Server：
+   ```bash
+   cd stock-server/stock-server-starter
+   mvn spring-boot:run
+   ```
+3. 启动 AI Client：
+   ```bash
+   cd stock-ai-client
+   mvn spring-boot:run
+   ```
 
-```
-http://localhost:8080/api/chat/process
-```
-
----
-
-### 🧑‍💻 Option B: Run Locally
+### 使用示例
 
 ```bash
-# 1. Clone & build
-mvn clean install
+# 查询产品
+curl -X POST http://localhost:8060/api/chat/process \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "查找名为 AlphaPhone X 的产品"}'
 
-# 2. Start the server
-cd stock-server
-mvn spring-boot:run
-
-# 3. Start the AI client
-cd ../stock-ai-client
-mvn spring-boot:run
-```
-
-Chat endpoint:
-
-```
-http://localhost:8080/api/chat/process
+# 创建产品
+curl -X POST http://localhost:8060/api/chat/process \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "添加一个名为 Wireless Mouse 的产品，SKU为 MOU-987，类别 ELECTRONICS"}'
 ```
 
 ---
 
-The application is now up and running. You can manage inventory items through conversational prompts—or better, use this foundation to extend your own AI-enhanced features on top of a familiar business flow.
+## 面试相关问题准备
+
+如果你在面试中使用这个项目，建议理解以下要点：
+
+1. **@Tool 注解原理**：Spring AI 底层通过反射获取方法签名和参数信息，序列化为 LLM 的 Function Calling JSON Schema
+2. **乐观锁工作机制**：@Version 字段在更新时 JPA 会自动拼接 `WHERE version = ?`，冲突时抛 OptimisticLockingFailureException
+3. **六边形架构**：domain 层定义端口接口，persistence 层实现输出端口，api 层实现输入端口，依赖方向始终指向 domain
+4. **为什么选 JPA 而不是 MyBatis**：本项目查询以单表操作为主，JPA 的 Specification 动态查询足以满足需求，减少模板代码

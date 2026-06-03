@@ -13,15 +13,14 @@
 package com.stockassistant.server.persistence.repository;
 
 import com.stockassistant.server.persistence.entity.InventoryItemEntity;
-import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,19 +55,16 @@ public interface InventoryRepository extends JpaRepository<InventoryItemEntity, 
     Optional<InventoryItemEntity> findByWarehouseAndProduct(UUID warehouseId, UUID productId);
 
     /**
-     * Updates the quantity of a specific product in a warehouse.
+     * Finds all inventory items with quantity below the specified threshold.
+     * Used for low stock alerting.
      *
-     * @param warehouseId The UUID of the warehouse
-     * @param productId The UUID of the product
-     * @param quantity The new quantity of the product
-     * @return The number of affected rows
+     * @param threshold the minimum quantity threshold
+     * @return list of inventory items with quantity below threshold
      */
-    @Modifying
-    @Transactional
     @Query("""
-                UPDATE InventoryItemEntity inventoryItemEntity
-                SET inventoryItemEntity.quantity = :quantity
-                WHERE inventoryItemEntity.product.uuid = :productId AND inventoryItemEntity.warehouse.uuid = :warehouseId
+                SELECT inventoryItemEntity
+                FROM InventoryItemEntity inventoryItemEntity
+                WHERE inventoryItemEntity.quantity < :threshold
             """)
-    int updateQuantity(UUID warehouseId, UUID productId, Integer quantity);
+    List<InventoryItemEntity> findItemsBelowThreshold(int threshold);
 }
