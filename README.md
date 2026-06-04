@@ -110,12 +110,3 @@ curl -X POST http://localhost:8060/api/chat/process \
 ```
 
 ---
-
-## 面试相关问题准备
-
-如果你在面试中使用这个项目，建议理解以下要点：
-
-1. **@Tool 注解原理**：Spring AI 底层通过反射获取方法签名和参数信息，序列化为 LLM 的 Function Calling JSON Schema
-2. **乐观锁工作机制**：@Version 字段在更新时 JPA 会自动拼接 `WHERE version = ?`，冲突时抛 OptimisticLockingFailureException
-3. **六边形架构**：domain 层定义端口接口，persistence 层实现输出端口，api 层实现输入端口，依赖方向始终指向 domain
-4. **为什么选 JPA 而不是 MyBatis**：本项目查询以单表操作为主，JPA 的 Specification 动态查询足以满足需求，减少模板代码
